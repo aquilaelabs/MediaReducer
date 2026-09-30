@@ -24,7 +24,7 @@
 // frame, then the arriving page's first. The arriving page used to start at
 // the bottom of the dip whatever the leaving page looked like, so a page at
 // full strength dropped to near-blank in one frame. Now the leaving page fades
-// toward the dip from the press and records how far it got, and the arriving
+// toward the dip once the click is released, and records how far it got, and the arriving
 // page starts from there. What is asserted is that hand-off: the opacity the
 // leaving page stopped at against the opacity the arriving page starts from,
 // read from the page rather than off pixels, for the same reason as above.
@@ -210,37 +210,44 @@ for (const [from, link] of [['/config', 'Filtering & Scoring'],
 // A person's click: the pointer goes down, and comes up about 100ms later.
 const arrived = (path) => p.waitForURL(u => new URL(u).pathname === path, { waitUntil: 'load' });
 const opacityOfMain = () => p.evaluate(() => Number(getComputedStyle(document.getElementById('main')).opacity));
-// holdMs, or with `untilDip` for as long as the fade takes to reach the
-// bottom: an animation starts on the next frame the browser draws, which on a
-// loaded test machine can be a few hundred milliseconds away.
-async function press(name, path, holdMs, untilDip) {
+// Hold a tab down for holdMs and release it. With `slowMs`, the next page's
+// document is held back that long, the way a slow connection does, so the
+// leaving page has time to fade as far as it will; what it reached is the
+// test-left-at the init script records on pagehide. (Nothing can be read off
+// the page from here while its navigation is pending: Playwright waits.)
+async function press(name, path, holdMs, slowMs) {
   const tab = p.getByRole('link', { name, exact: true }).first();
   const box = await tab.boundingBox();
+  const isNext = u => new URL(u).pathname === path;
+  if (slowMs) {
+    await p.route(isNext, async (r) => {
+      if (r.request().resourceType() === 'document') await new Promise(res => setTimeout(res, slowMs));
+      await r.continue();
+    });
+  }
   await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await p.mouse.down();
-  if (untilDip !== undefined) {
-    await p.waitForFunction((dip) => Number(getComputedStyle(document.getElementById('main')).opacity) <= dip + 0.02,
-                            untilDip, { timeout: 5000, polling: 50 }).catch(() => {});
-  } else {
-    await p.waitForTimeout(holdMs);
-  }
-  const pressed = await opacityOfMain();
+  await p.waitForTimeout(holdMs);
+  const whileHeld = await opacityOfMain();
   await Promise.all([arrived(path), p.mouse.up()]);
+  if (slowMs) await p.unroute(isNext);
   await p.waitForTimeout(400);
-  return pressed;
+  return { whileHeld };
 }
 
 if (await open('/config')) {
   const fade = await p.evaluate(() =>
     parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pr-enter-fade')));
-  // Held until the fade is done: the leaving page is at the bottom of the dip
-  // before it goes, so the arriving page starts there too.
-  const pressed = await press('Filtering & Scoring', '/explorer', 0, fade);
-  check('a held tab press takes the leaving page down to the dip before it goes',
-        Math.abs(pressed - fade) < 0.02, { pressed, fade });
-  const held = await arrival();
+  // Held down, nothing happens to the page: the fade is the click's, and the
+  // click is the release. Released onto a slow load, the page fades to the
+  // dip while it waits, and the arriving page starts from there.
+  const held = await press('Filtering & Scoring', '/explorer', 300, 1500);
+  check('holding a tab down leaves the page as it is', held.whileHeld === 1, held);
+  const slowly = await arrival();
+  check('...letting go fades it to the dip while the next page loads',
+        Math.abs(slowly.leftAt - fade) < 0.02, { ...slowly, fade });
   check('...and the arriving page starts at the dip, where the leaving page stopped',
-        held.path === '/explorer' && held.from > 0.95 && seamless(held), held);
+        slowly.path === '/explorer' && slowly.from > 0.95 && seamless(slowly), slowly);
 
   // A person's click, about 100ms down: whatever the leaving page reached is
   // where the arriving page starts, so no frame drops between them.
@@ -249,8 +256,7 @@ if (await open('/config')) {
   check('a quick click: the arriving page starts where the leaving page stopped',
         quick.path === '/' && seamless(quick), quick);
 
-  // Enter on a focused tab has no press before the click, so the leaving
-  // page barely starts down. Still no drop: the arriving page matches it.
+  // Enter on a focused tab: the same, from the keyboard.
   await p.getByRole('link', { name: 'Configuration', exact: true }).first().focus();
   await Promise.all([arrived('/config'), p.keyboard.press('Enter')]);
   await p.waitForTimeout(400);
@@ -266,23 +272,22 @@ if (await open('/config')) {
   check('a reload arrives in place, without the dip',
         reloaded.from < 0.02 && seamless(reloaded), reloaded);
 
-  // A press that goes nowhere (released off the tab, so no click) brings the
-  // page back up. Sent as the pointer events themselves: moving a real
-  // pointer off a held link starts the browser dragging the link instead.
+  // A press that goes nowhere (released off the tab, so no click) leaves the
+  // page alone throughout. Sent as the pointer events themselves: moving a
+  // real pointer off a held link starts the browser dragging the link instead.
   const stayed = await p.evaluate(async () => {
     const tab = [...document.querySelectorAll('.header-tabs a')].find(a => a.getAttribute('href') === '/');
     const main = document.getElementById('main');
     const now = () => Number(getComputedStyle(main).opacity);
     tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, isPrimary: true }));
-    // Down far enough to show the fade ran (see press() on how long it waits).
-    for (let i = 0; i < 100 && now() > 0.5; i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 300));
     const down = now();
     window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0, isPrimary: true }));
-    for (let i = 0; i < 100 && now() < 1; i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 400));
     return { path: location.pathname, down, opacity: now() };
   });
-  check('a press that ends off the tab brings the page back to full strength',
-        stayed.path === '/config' && stayed.down < 0.5 && stayed.opacity === 1, stayed);
+  check('a press that ends off the tab leaves the page at full strength',
+        stayed.path === '/config' && stayed.down === 1 && stayed.opacity === 1, stayed);
 } else {
   check('could not load /config for the switch checks', false);
 }

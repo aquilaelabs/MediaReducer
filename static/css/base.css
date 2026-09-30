@@ -413,8 +413,8 @@
        block for any fixed-position descendant).
        (Reduced-motion users get none of this via the kill switch above.)
 
-       The leaving half is prPageLeave in base.js: pressing a tab fades the old
-       content toward the dip, and the browser holds that page's last frame on
+       The leaving half is prPageLeave in base.js: clicking a tab fades the old
+       content toward the dip once the button is released, and the browser holds that page's last frame on
        screen until this one paints. It used to hold it at full strength, and
        this page then arrived at the bottom of the dip: every line of the old
        page went at once, a one-frame drop that read as a flash. Now the old
@@ -439,12 +439,15 @@
            full fade — and the dip is how long the screen spends there.
            Starting nearer 1, or over a shorter time, spends less of that. `1`
            opts out of the fade entirely and costs nothing.
-         --pr-leave-time  has to fit inside the press. The old page's last
-           frame is what the browser holds on screen, and it stops drawing
-           about 35ms after the click. The fade starts when the pointer goes
-           down, about 100ms earlier, so .12s is all but done by then. Longer
-           and a quick click hands over from partway down: no flash, since the
-           next page picks up from wherever it got to, but less of a fade.
+         --pr-leave-time  mostly outlasts the old page. Its last frame is
+           what the browser holds on screen, and it stops drawing about 35ms
+           after the click on a LAN, which is usually before the fade has
+           drawn a frame (measured on the dev instance: one switch in five
+           got any fade), so a fast switch hands over at full strength and
+           only a slower load reaches the dip. No flash either way: the next
+           page picks up from wherever it got to.
+           It starts on the release, not the press: holding a tab down dimming
+           the page read as the page going away before anything was chosen.
 
        Note the entrance curve is deliberately front-loaded rather than a
        keyword ease: it is what keeps most of the fade out of the way early,

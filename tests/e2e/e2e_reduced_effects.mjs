@@ -119,28 +119,32 @@ async function glass(path) {
   });
 }
 
-// A tab press fades the leaving page toward the dip (the first half of a
-// switch, e2e_nav_transition). Pressed and released off the tab, so nothing
-// navigates: sent as pointer events, since moving a real pointer off a held
-// link drags the link instead.
-async function tabPress() {
+// A tab click fades the leaving page toward the dip (the first half of a
+// switch, e2e_nav_transition). The Dashboard's document is held back a
+// second so the page has time to fade, and the page records its own opacity
+// as it goes: nothing can be read off it from here while its navigation is
+// pending.
+async function tabClick() {
   await p.goto(BASE + '/config', { waitUntil: 'load' });
   await p.evaluate(() => document.querySelectorAll('.modal.show')
     .forEach(m => window.bootstrap && bootstrap.Modal.getInstance(m)?.hide()));
   await p.waitForTimeout(900);
-  return p.evaluate(async () => {
-    const tab = [...document.querySelectorAll('.header-tabs a')].find(a => a.getAttribute('href') === '/');
-    const main = document.getElementById('main');
-    const now = () => Number(getComputedStyle(main).opacity);
-    tab.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, isPrimary: true }));
-    // An animation starts on the next frame drawn, which a loaded machine can
-    // take a while over: give the fade up to two seconds to show, not 120ms.
-    for (let i = 0; i < 40 && now() > 0.5; i++) await new Promise(r => setTimeout(r, 50));
-    const down = now();
-    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0, isPrimary: true }));
-    for (let i = 0; i < 40 && now() < 1; i++) await new Promise(r => setTimeout(r, 50));
-    return { down, after: now() };
+  await p.evaluate(() => addEventListener('pagehide', () => sessionStorage.setItem('test-left-at',
+    getComputedStyle(document.getElementById('main')).opacity)));
+  const isDash = u => new URL(u).pathname === '/';
+  await p.route(isDash, async (r) => {
+    if (r.request().resourceType() === 'document') await new Promise(res => setTimeout(res, 1500));
+    await r.continue();
   });
+  await Promise.all([p.waitForURL(isDash, { waitUntil: 'load' }),
+                     p.getByRole('link', { name: 'Dashboard', exact: true }).first().click()]);
+  await p.unroute(isDash);
+  const leftAt = await p.evaluate(() => {
+    const v = sessionStorage.getItem('test-left-at');
+    sessionStorage.removeItem('test-left-at');
+    return v === null ? null : Number(v);
+  });
+  return { leftAt };
 }
 
 // Light/dark. The palette lands in one frame either way — that is what stops
@@ -205,9 +209,9 @@ try {
   const barOn = await bar();
   check('...and a running progress bar carries stripes and a sweep',
         barOn && barOn.stripes && barOn.sweep && barOn.striping, barOn);
-  const pressOn = await tabPress();
-  check('...and a tab press fades the page on its way out, back up if it goes nowhere',
-        pressOn.down < 0.5 && pressOn.after === 1, pressOn);
+  const clickOn = await tabClick();
+  check('...and a tab click fades the page on its way out',
+        clickOn.leftAt !== null && clickOn.leftAt < 0.5, clickOn);
   // The baseline the glass check below is worth anything against: a page with
   // no blur to begin with would pass "no blur when reduced" on its own.
   const glassOn = await glass('/config');
@@ -236,9 +240,9 @@ try {
   const barOff = await bar();
   check('a running progress bar drops its stripes and sweep, not its fill',
         barOff && !barOff.stripes && !barOff.sweep, barOff);
-  const pressOff = await tabPress();
-  check('a tab press leaves the page at full strength',
-        pressOff.down === 1 && pressOff.after === 1, pressOff);
+  const clickOff = await tabClick();
+  check('a tab click leaves the page at full strength',
+        clickOff.leftAt === 1, clickOff);
 
   // Hover still says "clickable"; it just lands at once, and the press lands
   // on the same color rather than a third, darker one.

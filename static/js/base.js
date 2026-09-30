@@ -746,8 +746,9 @@ function prApplyAppearance({ effectsOff, glassOff }) {
 const prEffectsOff = () => document.documentElement.getAttribute('data-effects') === 'off';
 
 // Leaving a page: the first half of a navigation, whose second half is #main's
-// entrance (base.css). A press on a link to another page fades the content
-// toward the dip. The browser keeps this page's last frame on screen until the
+// entrance (base.css). A click on a link to another page fades the content
+// toward the dip, from the release, never while the button is held. The
+// browser keeps this page's last frame on screen until the
 // next page paints, and pagehide records how far down that frame is, for the
 // next page's head script to start its entrance from, so the frames either
 // side of the switch match. Opacity only: a transform, even for the fade's few
@@ -785,7 +786,7 @@ function prPageLeave() {
   clearTimeout(_prLeaveSafety);
   _prLeaveSafety = setTimeout(prPageStay, 4000);
 }
-// A press that did not become a navigation, or a page back from the
+// A click whose navigation was cancelled, or a page back from the
 // back/forward cache: the content comes back up.
 function prPageStay() {
   clearTimeout(_prLeaveSafety);
@@ -796,8 +797,9 @@ function prPageStay() {
   a.finished.then(() => a.cancel(), () => {});
 }
 // Links to another page of the app, however they are laid out: the tabs, the
-// header's Running badge, the Dashboard's links into Configuration. A tab
-// starts earlier, on the press (initTabNavFeedback).
+// header's Running badge, the Dashboard's links into Configuration. On the
+// click, which is the release: holding a tab down dimming the page read as
+// the page going away before anything had been chosen.
 document.addEventListener('click', (e) => {
   if (e.defaultPrevented || e.button !== 0
       || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -864,13 +866,10 @@ function initTabNavFeedback() {
       pressT = Date.now();
       clicked = false;
       a.classList.add('is-navigating');
-      // The page starts on its way out now too: the click comes about 100ms
-      // later, and the browser stops drawing this page soon after it.
-      prPageLeave();
       // A press that never becomes a navigation (drag off, release elsewhere,
-      // canceled) must not leave the tab lit or the page dimmed.
+      // canceled) must not leave the tab lit.
       const settle = () => setTimeout(() => {
-        if (!clicked) { a.classList.remove('is-navigating'); prPageStay(); }
+        if (!clicked) a.classList.remove('is-navigating');
       }, 250);
       window.addEventListener('pointerup', settle, { once: true });
       window.addEventListener('pointercancel', settle, { once: true });
@@ -882,7 +881,6 @@ function initTabNavFeedback() {
       if (!d || d === location.pathname) return;
       clicked = true;
       a.classList.add('is-navigating');   // keyboard activation has no pointerdown
-      prPageLeave();
       // Hand the wave to the next page: a fast load swaps documents before the
       // ripple finishes, and the arriving page plays out the remainder — timed
       // from the PRESS, where the wave actually began.
