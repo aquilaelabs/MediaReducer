@@ -747,9 +747,11 @@ const prEffectsOff = () => document.documentElement.getAttribute('data-effects')
 
 // Leaving a page: the first half of a navigation, whose second half is #main's
 // entrance (base.css). A click on a link to another page fades the content
-// toward the dip, from the release, never while the button is held. The
-// browser keeps this page's last frame on screen until the
-// next page paints, and pagehide records how far down that frame is, for the
+// to the dip, from the release, never while the button is held, and only
+// then goes: the browser stops drawing a page about 35ms after a navigation
+// starts, so a fade begun with it would hardly ever be seen. The browser
+// keeps this page's last frame on screen until the next page paints, and
+// pagehide records how far down that frame is, for the
 // next page's head script to start its entrance from, so the frames either
 // side of the switch match. Opacity only: a transform, even for the fade's few
 // frames, would make #main the containing block of the fixed log window and
@@ -757,6 +759,7 @@ const prEffectsOff = () => document.documentElement.getAttribute('data-effects')
 const PR_DIP_KEY = 'pr-page-dip';
 let _prLeave = null;          // the fade, while this page is on its way out
 let _prLeaveSafety = 0;
+let _prGoing = false;         // a click is waiting out the fade to navigate
 function _prDipTokens() {
   const cs = getComputedStyle(document.documentElement);
   const fade = parseFloat(cs.getPropertyValue('--pr-enter-fade'));
@@ -769,10 +772,12 @@ function _prDipTokens() {
 function _prDipOf(opacity, fade) {
   return fade < 1 ? Math.min(1, Math.max(0, (1 - opacity) / (1 - fade))) : 0;
 }
+// Returns the fade, or null where there is none to wait for.
 function prPageLeave() {
   const main = document.getElementById('main');
-  if (!main || _prLeave || typeof main.animate !== 'function' || prEffectsOff()
-      || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (_prLeave) return _prLeave;
+  if (!main || typeof main.animate !== 'function' || prEffectsOff()
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
   const { fade, ms } = _prDipTokens();
   // From wherever the content stands, which is short of full strength when
   // the press comes while this page is still rising in.
@@ -785,11 +790,13 @@ function prPageLeave() {
   // from full strength, which is still no flash.
   clearTimeout(_prLeaveSafety);
   _prLeaveSafety = setTimeout(prPageStay, 4000);
+  return _prLeave;
 }
 // A click whose navigation was cancelled, or a page back from the
 // back/forward cache: the content comes back up.
 function prPageStay() {
   clearTimeout(_prLeaveSafety);
+  _prGoing = false;
   const a = _prLeave;
   if (!a) return;
   _prLeave = null;
@@ -799,7 +806,8 @@ function prPageStay() {
 // Links to another page of the app, however they are laid out: the tabs, the
 // header's Running badge, the Dashboard's links into Configuration. On the
 // click, which is the release: holding a tab down dimming the page read as
-// the page going away before anything had been chosen.
+// the page going away before anything had been chosen. The navigation waits
+// for the fade, about .1s (--pr-leave-time).
 document.addEventListener('click', (e) => {
   if (e.defaultPrevented || e.button !== 0
       || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -807,9 +815,18 @@ document.addEventListener('click', (e) => {
   if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
   if (a.origin !== location.origin
       || (a.pathname === location.pathname && a.search === location.search)) return;
-  prPageLeave();
-  // A handler that runs after this one may still cancel the navigation.
-  setTimeout(() => { if (e.defaultPrevented) prPageStay(); }, 0);
+  // A second click while the first is fading: the first one goes.
+  if (_prGoing) { e.preventDefault(); return; }
+  const fade = prPageLeave();
+  if (!fade) return;              // no fade (reduced motion, effects off): go now
+  e.preventDefault();
+  _prGoing = true;
+  const href = a.href;
+  // An animation starts on the next frame drawn; a busy page may be slow to
+  // draw one, and the click must not wait on it past the fade's own length.
+  const { ms } = _prDipTokens();
+  Promise.race([fade.finished.catch(() => {}), new Promise(r => setTimeout(r, ms + 150))])
+    .then(() => { if (_prGoing) location.assign(href); });
 });
 window.addEventListener('pagehide', () => {
   const main = document.getElementById('main');
@@ -834,6 +851,7 @@ window.addEventListener('pageshow', (e) => {
     if (h && Date.now() - Number(h.t) < 5000 && h.p >= 0 && h.p <= 1) p = Number(h.p);
   } catch (err) {}
   clearTimeout(_prLeaveSafety);
+  _prGoing = false;
   if (_prLeave) { _prLeave.cancel(); _prLeave = null; }
   const main = document.getElementById('main');
   if (main && p > 0.01) {

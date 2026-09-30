@@ -21,7 +21,7 @@
       --pr-enter-rise: 8px;    /* how far the content slides up into place */
       --pr-enter-fade: .15;    /* the dip: the opacity between pages; 1 = no fade */
       --pr-enter-time: .7s;    /* how long the arriving page takes */
-      --pr-leave-time: .12s;   /* how long the leaving page takes to reach the dip */
+      --pr-leave-time: .1s;    /* how long the leaving page takes to reach the dip; the click waits for it */
       /* Not a knob: how far into the dip this page starts, 1 = all the way.
          The head script in base.html sets it from what the page before left. */
       --pr-enter-from: 1;
@@ -414,7 +414,7 @@
        (Reduced-motion users get none of this via the kill switch above.)
 
        The leaving half is prPageLeave in base.js: clicking a tab fades the old
-       content toward the dip once the button is released, and the browser holds that page's last frame on
+       content to the dip once the button is released, then navigates, and the browser holds that page's last frame on
        screen until this one paints. It used to hold it at full strength, and
        this page then arrived at the bottom of the dip: every line of the old
        page went at once, a one-frame drop that read as a flash. Now the old
@@ -439,15 +439,13 @@
            full fade — and the dip is how long the screen spends there.
            Starting nearer 1, or over a shorter time, spends less of that. `1`
            opts out of the fade entirely and costs nothing.
-         --pr-leave-time  mostly outlasts the old page. Its last frame is
-           what the browser holds on screen, and it stops drawing about 35ms
-           after the click on a LAN, which is usually before the fade has
-           drawn a frame (measured on the dev instance: one switch in five
-           got any fade), so a fast switch hands over at full strength and
-           only a slower load reaches the dip. No flash either way: the next
-           page picks up from wherever it got to.
-           It starts on the release, not the press: holding a tab down dimming
-           the page read as the page going away before anything was chosen.
+         --pr-leave-time  is added to every switch: the click waits for the
+           fade before it navigates. It has to, because the browser stops
+           drawing the old page about 35ms after a navigation starts, and a
+           fade begun with the navigation hardly ever drew a frame (one
+           switch in five on the dev instance). It starts on the release, not
+           the press: holding a tab down dimming the page read as the page
+           going away before anything was chosen.
 
        Note the entrance curve is deliberately front-loaded rather than a
        keyword ease: it is what keeps most of the fade out of the way early,

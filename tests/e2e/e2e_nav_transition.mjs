@@ -209,6 +209,10 @@ for (const [from, link] of [['/config', 'Filtering & Scoring'],
 // ── The switch itself ────────────────────────────────────────────────────────
 // A person's click: the pointer goes down, and comes up about 100ms later.
 const arrived = (path) => p.waitForURL(u => new URL(u).pathname === path, { waitUntil: 'load' });
+// Until the page's own entrance has finished: a page that arrived from the
+// dip is still rising for --pr-enter-time.
+const settled = () => p.waitForFunction(() => document.getElementById('main').getAnimations().length === 0,
+                                        null, { timeout: 5000, polling: 50 }).catch(() => {});
 const opacityOfMain = () => p.evaluate(() => Number(getComputedStyle(document.getElementById('main')).opacity));
 // Hold a tab down for holdMs and release it. With `slowMs`, the next page's
 // document is held back that long, the way a slow connection does, so the
@@ -249,29 +253,33 @@ if (await open('/config')) {
   check('...and the arriving page starts at the dip, where the leaving page stopped',
         slowly.path === '/explorer' && slowly.from > 0.95 && seamless(slowly), slowly);
 
-  // A person's click, about 100ms down: whatever the leaving page reached is
-  // where the arriving page starts, so no frame drops between them.
+  // A person's click, about 100ms down, onto a fast load: the click waits out
+  // the fade before it navigates, so the page reaches the dip all the same.
   await press('Dashboard', '/', 100);
   const quick = await arrival();
-  check('a quick click: the arriving page starts where the leaving page stopped',
-        quick.path === '/' && seamless(quick), quick);
+  check('a quick click: the page fades to the dip before it goes, however fast the load',
+        quick.path === '/' && quick.leftAt !== null && quick.leftAt <= fade + 0.05, { ...quick, fade });
+  check('...and the arriving page starts where the leaving page stopped',
+        seamless(quick), quick);
 
   // Enter on a focused tab: the same, from the keyboard.
   await p.getByRole('link', { name: 'Configuration', exact: true }).first().focus();
   await Promise.all([arrived('/config'), p.keyboard.press('Enter')]);
   await p.waitForTimeout(400);
   const keyed = await arrival();
-  check('Enter on a tab: the arriving page starts where the leaving page stopped',
-        keyed.path === '/config' && seamless(keyed), keyed);
+  check('Enter on a tab: the page fades to the dip, and the next starts there',
+        keyed.path === '/config' && keyed.leftAt <= fade + 0.05 && seamless(keyed), { ...keyed, fade });
 
   // Nothing pressed: a reload hands over from a page at full strength, so it
   // arrives in place rather than dipping to blank and back.
+  await settled();
   await p.reload({ waitUntil: 'load' });
   await p.waitForTimeout(400);
   const reloaded = await arrival();
   check('a reload arrives in place, without the dip',
         reloaded.from < 0.02 && seamless(reloaded), reloaded);
 
+  await settled();
   // A press that goes nowhere (released off the tab, so no click) leaves the
   // page alone throughout. Sent as the pointer events themselves: moving a
   // real pointer off a held link starts the browser dragging the link instead.
