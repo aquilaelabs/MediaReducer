@@ -299,6 +299,26 @@ if (await open('/config')) {
   await fresh.close();
 }
 
+// The header is the same either side of a switch from the first paint. The
+// theme button's label used to be written in by base.js once the page was up,
+// so a light-theme reader saw it say Light, then Dark, on every page. It is
+// chosen by CSS off data-theme now, like the icon: right with base.js blocked.
+{
+  const plain = await b.newContext({ viewport: { width: 1400, height: 900 } });
+  await plain.route('**/js/base.js*', r => r.abort());
+  const lp = await plain.newPage();
+  const labels = {};
+  for (const theme of ['light', 'dark']) {
+    await lp.goto(BASE + '/config', { waitUntil: 'domcontentloaded' });
+    await lp.evaluate(t => localStorage.setItem('pr-theme', t), theme);
+    await lp.reload({ waitUntil: 'domcontentloaded' });
+    labels[theme] = await lp.evaluate(() => document.getElementById('theme-toggle-label').innerText.trim());
+  }
+  check("the theme button names the theme it switches to before any script runs",
+        labels.light === 'Dark' && labels.dark === 'Light', labels);
+  await plain.close();
+}
+
 check('no JS errors', errs.length === 0, errs);
 console.log('RESULT:', ok ? 'PASS' : 'FAIL');
 await b.close();

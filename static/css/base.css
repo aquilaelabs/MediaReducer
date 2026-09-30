@@ -1694,6 +1694,12 @@
     :root[data-theme="light"] .theme-toggle .icon-to-light { display: none; }
     :root:not([data-theme="light"]) .theme-toggle .icon-to-dark  { display: none; }
     :root:not([data-theme="light"]) .theme-toggle .icon-to-light { display: block; }
+    /* The label too, and chosen the same way: by data-theme, which the head
+       script sets before the first paint. Written in by base.js instead, it
+       arrived saying Light and changed to Dark on every page a light-theme
+       reader opened, a flicker in the header on each switch of tab. */
+    :root[data-theme="light"] .theme-toggle .tt-to-light,
+    :root:not([data-theme="light"]) .theme-toggle .tt-to-dark { display: none; }
 
     @media (min-width: 768px) {
       .theme-toggle { margin-right: 24px; }   /* line up with the page content's right edge */

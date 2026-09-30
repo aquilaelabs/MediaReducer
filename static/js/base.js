@@ -159,17 +159,16 @@ function prSetTheme(theme, opts) {
     settle();
   }
   try { localStorage.setItem('pr-theme', t); } catch (e) {}
-  const label = document.getElementById('theme-toggle-label');
   const btn = document.getElementById('theme-toggle');
-  // Button advertises the theme you'll switch TO.
-  if (label) label.textContent = (t === 'light') ? 'Dark' : 'Light';
+  // Button advertises the theme you'll switch TO. Its label and icon follow
+  // data-theme in CSS, so they are right from the first paint.
   if (btn) btn.title = (t === 'light') ? 'Switch to dark theme' : 'Switch to light theme';
 }
 function prToggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   prSetTheme(current === 'light' ? 'dark' : 'light', { animate: true });
 }
-// Sync the label/title with whatever the pre-paint script already applied.
+// Sync the title with whatever the pre-paint script already applied.
 document.addEventListener('DOMContentLoaded', function () {
   prSetTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 });
