@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- MediaReducer has moved to github.com/aquilaelabs/MediaReducer, and its image to ghcr.io/aquilaelabs/mediareducer. The old ghcr.io/stencil-projects path no longer serves updates: change an Unraid container's Repository field to ghcr.io/aquilaelabs/mediareducer:latest to keep receiving them (1bd6db8)
+
 ### Fixed
 
-- Switching tabs no longer flashes: the page you leave fades as you click and the next one fades in from the same point, instead of its content blinking out to almost nothing; a reload or Back no longer fades at all (9f8dafb)
-- In the light theme, the theme button no longer reads Light for a moment before changing to Dark on every page you open (9f8dafb)
+- Switching tabs no longer flashes: the page you leave fades as you click and the next one fades in from the same point, instead of its content blinking out to almost nothing; a reload or Back no longer fades at all (f1c405c)
+- In the light theme, the theme button no longer reads Light for a moment before changing to Dark on every page you open (f1c405c)
 
 ## 0.8.0: 2026-09-28
 
