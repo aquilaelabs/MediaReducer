@@ -50,7 +50,7 @@ check("...and falls back to a hosted runner for the public repo",
 # Named in full. A partial match ("MediaReducer") would also be true of the
 # public repo, and would send its jobs to a runner that does not exist.
 check("...keyed to the private repo by its full name",
-      "Stencil-Projects/MediaReducer-Dev" in str(runs_on), runs_on)
+      "aquilaelabs/MediaReducer-Dev" in str(runs_on), runs_on)
 
 # The static check above only proves what the file asks for. Something has to
 # check what the runner actually was, or a mis-edited expression quietly bills
@@ -115,7 +115,7 @@ for tool, why in (("pyflakes", "test_no_undefined_names"),
 gate = str(tests["jobs"]["tests"].get("if", ""))
 check("the test job states when it does not run", gate != "", gate)
 check("...keyed to the private repo in full, so the public one still tests a merge",
-      "Stencil-Projects/MediaReducer-Dev" in gate, gate)
+      "aquilaelabs/MediaReducer-Dev" in gate, gate)
 check("...and only for a push, so pull requests are untouched",
       "'push'" in gate, gate)
 # The trap, and the reason this is asserted rather than trusted: a release
@@ -145,11 +145,11 @@ compose = ROOT / "tools" / "ci-runner" / "docker-compose.yml"
 if compose.exists():
     svc = yaml.safe_load(compose.read_text())["services"]["ci-runner"]
     env = " ".join(svc.get("environment") or [])
-    # Org scope serves every Stencil-Projects repo; the fork-PR safety line
+    # Org scope serves every aquilaelabs repo; the fork-PR safety line
     # holds because GitHub withholds org runners from public repositories
     # unless a runner group is explicitly opened to them.
     check("the runner is org-scoped, to the org",
-          "RUNNER_SCOPE=org" in env and "ORG_NAME=Stencil-Projects" in env, env)
+          "RUNNER_SCOPE=org" in env and "ORG_NAME=aquilaelabs" in env, env)
     check("...and labelled to match runs-on",
           "self-hosted" in env, env)
     check("the runner cannot reach the docker socket",

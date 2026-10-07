@@ -1,14 +1,14 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>MediaReducer</Name>
-  <Repository>ghcr.io/stencil-projects/mediareducer:latest</Repository>
-  <Registry>https://ghcr.io/stencil-projects/mediareducer</Registry>
+  <Repository>ghcr.io/aquilaelabs/mediareducer:latest</Repository>
+  <Registry>https://ghcr.io/aquilaelabs/mediareducer</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/Stencil-Projects/MediaReducer/issues</Support>
-  <Project>https://github.com/Stencil-Projects/MediaReducer</Project>
+  <Support>https://github.com/aquilaelabs/MediaReducer/issues</Support>
+  <Project>https://github.com/aquilaelabs/MediaReducer</Project>
   <Overview>
     Deletes the movies and TV seasons you are least likely to miss when storage
     runs low. Reads Plex/Tautulli, Jellyfin or both, scores every movie and
@@ -26,8 +26,8 @@
   </Overview>
   <Category>MediaApp:Video Tools:Utilities</Category>
   <WebUI>http://[IP]:[PORT:7474]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/Stencil-Projects/MediaReducer/main/unraid/mediareducer.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/Stencil-Projects/MediaReducer/main/static/apple-touch-icon.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/aquilaelabs/MediaReducer/main/unraid/mediareducer.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/aquilaelabs/MediaReducer/main/static/apple-touch-icon.png</Icon>
   <!-- stop-timeout 30: on stop the engine needs about 8s to finish the file it
        is deleting and record it, and Unraid's default 10s can cut that short.
 

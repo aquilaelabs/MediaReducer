@@ -49,7 +49,7 @@ jobs:
     # job satisfies `needs:` rather than failing it, so the image would build
     # with nothing having tested it. Only the ref separates the two.
     if: >-
-      !(github.repository == 'Stencil-Projects/MediaReducer-Dev'
+      !(github.repository == 'aquilaelabs/MediaReducer-Dev'
       && github.event_name == 'push'
       && github.ref == 'refs/heads/main')
 
@@ -67,7 +67,7 @@ jobs:
     # `self-hosted`, and that label alone sends this job to whichever is idle.
     # Naming the one intended keeps it there. It is the narrower label — the
     # other runner does not carry it — so this cannot silently widen back.
-    runs-on: ${{ github.repository == 'Stencil-Projects/MediaReducer-Dev' && 'builderbot' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'aquilaelabs/MediaReducer-Dev' && 'builderbot' || 'ubuntu-latest' }}
     timeout-minutes: 25
     steps:
       # First, before anything is checked out or installed. runs-on is an
@@ -83,7 +83,7 @@ jobs:
         run: |
           echo "Ran on \`${{ runner.name }}\` — ${{ runner.environment }}, ${{ runner.os }}/${{ runner.arch }}" \
             >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ github.repository }}" = "Stencil-Projects/MediaReducer-Dev" ] \
+          if [ "${{ github.repository }}" = "aquilaelabs/MediaReducer-Dev" ] \
              && [ "${{ runner.environment }}" != "self-hosted" ]; then
             echo "This repo is meant to run on the self-hosted runner, and this job took a billed one."
             exit 1

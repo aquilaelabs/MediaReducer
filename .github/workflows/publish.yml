@@ -63,7 +63,7 @@ jobs:
               # run in the public repo stays the dry run it has always been.
               # (Named by description, not by path: that template is held back,
               # and a published file pointing at it is a dead link here.)
-              if [ "$GITHUB_REPOSITORY" = "Stencil-Projects/MediaReducer-Dev" ]; then
+              if [ "$GITHUB_REPOSITORY" = "aquilaelabs/MediaReducer-Dev" ]; then
                 TAGS="$TAGS $IMAGE:dev"
               fi
               ;;
@@ -77,7 +77,7 @@ jobs:
           # need a registry credential read this instead of each repeating the
           # condition, which is how they would drift apart.
           if [ "${{ github.event_name }}" = "push" ] \
-             || [ "$GITHUB_REPOSITORY" = "Stencil-Projects/MediaReducer-Dev" ]; then
+             || [ "$GITHUB_REPOSITORY" = "aquilaelabs/MediaReducer-Dev" ]; then
             PUSHING=1
           else
             PUSHING=0
