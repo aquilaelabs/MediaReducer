@@ -7,11 +7,8 @@ name: Tests
 # open was being tested twice: push and pull_request are separate concurrency
 # groups, so neither cancelled the other and both ran to the end. Branch work
 # is covered by the pull_request run, and workflow_dispatch covers a branch
-# with no pull request yet.
-#
-# What remains — the run on a merge into main — is for the PUBLIC repo, where
-# nothing else covers what lands. The dev repo skips it at the job below; see
-# the reasoning there.
+# with no pull request yet. The run on a merge into main stays: work can land
+# by a direct push, and nothing else would cover it.
 on:
   push:
     branches: [main]
@@ -31,64 +28,14 @@ permissions:
 
 jobs:
   tests:
-    # Not on a merge into main, and only in the dev repo. Work lands there
-    # through pull requests, and the pull_request run tested the merge result
-    # on this same box minutes before — so the merge run is the same commits a
-    # second time, holding the one runner a session may be waiting on. It is
-    # also the third pass: the suite and `bb lint` are run locally before any
-    # of it is pushed.
-    #
-    # The public repo keeps its merge run. A push can arrive there without a
-    # pull request having been run here first, and nothing else would cover it.
-    #
-    # Matched on the REF rather than the event name, and that is the whole
-    # care in this condition. A release reaches this file through publish.yml's
-    # workflow_call, and inside a called workflow the github context is the
-    # CALLER's — so a tag push reads as event_name 'push' here too. Skipping on
-    # the event alone would skip the suite the release gates on, and a skipped
-    # job satisfies `needs:` rather than failing it, so the image would build
-    # with nothing having tested it. Only the ref separates the two.
-    if: >-
-      !(github.repository == 'aquilaelabs/MediaReducer-Dev'
-      && github.event_name == 'push'
-      && github.ref == 'refs/heads/main')
-
-    # Minutes are billed on private repositories and free on public ones, so
-    # the private dev repo runs on a self-hosted runner and the public one
-    # stays on GitHub's.
-    #
-    # This has to be an expression rather than a plain label, because the dev
-    # repo's publish script mirrors this directory into the public repo.
-    # Hardcoded, every public run — and every outside contributor's pull
-    # request — would queue for 24 hours waiting for a runner that repo does
-    # not have, and then expire. The fallback is the load-bearing half.
-    #
-    # `builderbot` rather than `self-hosted`: two runners in the org answer to
-    # `self-hosted`, and that label alone sends this job to whichever is idle.
-    # Naming the one intended keeps it there. It is the narrower label — the
-    # other runner does not carry it — so this cannot silently widen back.
-    runs-on: ${{ github.repository == 'aquilaelabs/MediaReducer-Dev' && 'builderbot' || 'ubuntu-latest' }}
+    # The suite runs on every trigger, a release's workflow_call included.
+    # A condition here would be risky: inside a called workflow the github
+    # context is the CALLER's, so a tag push reads as event_name 'push', and a
+    # skipped job satisfies `needs:` rather than failing it, so the image would
+    # build with nothing having tested it.
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      # First, before anything is checked out or installed. runs-on is an
-      # expression, so the file states an intention and only the runner can
-      # confirm it resolved that way. Recorded in the summary because the
-      # alternative is noticing on a billing page weeks later, by which point
-      # nobody opens the run that caused it.
-      #
-      # Failing here rather than warning: the private repo taking a hosted
-      # runner means it is being billed, and it can only happen if this
-      # expression was edited. First step, so that costs seconds, not a suite.
-      - name: Say which runner this landed on
-        run: |
-          echo "Ran on \`${{ runner.name }}\` — ${{ runner.environment }}, ${{ runner.os }}/${{ runner.arch }}" \
-            >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ github.repository }}" = "aquilaelabs/MediaReducer-Dev" ] \
-             && [ "${{ runner.environment }}" != "self-hosted" ]; then
-            echo "This repo is meant to run on the self-hosted runner, and this job took a billed one."
-            exit 1
-          fi
-
       - uses: actions/checkout@v7
 
       # 3.11 matches the Dockerfile, so CI runs the interpreter the image ships.
@@ -123,22 +70,11 @@ jobs:
         # without it, so install it here or that test quietly does nothing —
         # the same arrangement as pyflakes above, for the same reason.
         #
-        # --with-deps is the browser's SYSTEM libraries, and installing those
-        # needs root. GitHub's runners hand the job passwordless sudo, so the
-        # public repo takes the first branch and nothing about it changes.
-        # The runner this repo is pinned to does not: it runs as an
-        # unprivileged user with no sudo, and already carries those libraries
-        # in its image. Asking for them there fails the whole job over
-        # something that is already true, so ask only where it can be answered.
-        # The browser itself downloads fine either way.
+        # --with-deps is the browser's SYSTEM libraries, which GitHub's runners
+        # can install because they hand the job passwordless sudo.
         run: |
           npm install --no-save playwright@1.61.1 eslint@10.1.0
-          if [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; then
-            npx playwright install --with-deps chromium
-          else
-            echo "No root: installing the browser only, and trusting the image's system libraries."
-            npx playwright install chromium
-          fi
+          npx playwright install --with-deps chromium
 
       - name: Point the tests at the browser that was just installed
         # Belt and braces. Playwright picks chrome-headless-shell by default,

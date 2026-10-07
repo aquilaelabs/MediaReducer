@@ -1,13 +1,6 @@
-"""The workflows run in two repositories, and only one of them is this one.
-
-The dev repo's publish script mirrors this directory into the public repo, so
-every workflow file here is also a workflow file there — under a different
-name, a different visibility, and with no self-hosted runner attached. The
-checks below are the ones where getting it wrong is silent: a job that queues
-for 24 hours before failing, or a commit quietly billed twice.
-
-This ships, so it is written to hold in BOTH repositories. It asserts the
-fallback, never that the run is self-hosted.
+"""The CI workflows, where getting them wrong is silent: a job that queues for
+24 hours waiting for a runner that does not exist, a commit tested twice, or a
+release built without the suite having run on it.
 """
 import re
 import sys
@@ -39,34 +32,14 @@ def load(name):
 tests = load("tests.yml")
 publish = load("publish.yml")
 
-# ── Where the job runs ───────────────────────────────────────────────────────
-runs_on = tests["jobs"]["tests"]["runs-on"]
-check("the test job picks its runner from the repository it is in",
-      "${{" in str(runs_on) and "github.repository" in str(runs_on), runs_on)
-# The half that matters in the mirrored copy: no runner of ours is attached
-# there, so the expression must land on a GitHub-hosted label.
-check("...and falls back to a hosted runner for the public repo",
-      "ubuntu-latest" in str(runs_on), runs_on)
-# Named in full. A partial match ("MediaReducer") would also be true of the
-# public repo, and would send its jobs to a runner that does not exist.
-check("...keyed to the private repo by its full name",
-      "aquilaelabs/MediaReducer-Dev" in str(runs_on), runs_on)
-
-# The static check above only proves what the file asks for. Something has to
-# check what the runner actually was, or a mis-edited expression quietly bills
-# the private repo again and nothing says so until a billing page does.
-steps = tests["jobs"]["tests"]["steps"]
-proof = next((s for s in steps if "runner.environment" in str(s.get("run", ""))), None)
-check("a step reports the runner it actually got", proof is not None,
-      [s.get("name") for s in steps])
-check("...before the suite spends anything on the wrong one",
-      proof is not None and steps.index(proof) == 0,
-      [s.get("name") or s.get("uses") for s in steps[:2]])
-check("...and treats a billed runner here as a failure",
-      proof is not None and "exit 1" in str(proof.get("run", "")), proof)
-
-# The publish job builds and boots a Docker image. It only ever runs in the
-# public repo, and the runner there must be GitHub's.
+# ── Where the jobs run ───────────────────────────────────────────────────────
+# A public repo gets GitHub's runners free, and no runner of ours is attached
+# to it: a self-hosted label here queues every run for 24 hours and expires.
+check("the test job runs on a hosted runner",
+      tests["jobs"]["tests"]["runs-on"] == "ubuntu-latest",
+      tests["jobs"]["tests"]["runs-on"])
+# The publish job builds and boots a Docker image. It runs in the
+# same place, and the runner must be GitHub's.
 check("the publish job stays on a hosted runner",
       publish["jobs"]["publish"]["runs-on"] == "ubuntu-latest",
       publish["jobs"]["publish"]["runs-on"])
@@ -92,7 +65,7 @@ check("a branch with no pull request can still be run by hand",
       "workflow_dispatch" in triggers, sorted(map(str, triggers)))
 
 # A newer push makes an older run pointless; without this they queue up behind
-# each other on a single self-hosted runner.
+# each other.
 check("an in-flight run is cancelled by a newer one",
       tests.get("concurrency", {}).get("cancel-in-progress") is True,
       tests.get("concurrency"))
@@ -108,25 +81,14 @@ for tool, why in (("pyflakes", "test_no_undefined_names"),
           re.search(rf"\b{tool}[@=\s]", _tests_yml) is not None)
 
 # ── When the suite does NOT run ──────────────────────────────────────────────
-# The dev repo skips the merge run: a pull request tested the merge result
-# minutes earlier and the suite is run locally before the push. The public repo
-# must keep it, because a push can reach that repo without any of that having
-# happened — so the condition has to name the dev repo, not describe a merge.
-gate = str(tests["jobs"]["tests"].get("if", ""))
-check("the test job states when it does not run", gate != "", gate)
-check("...keyed to the private repo in full, so the public one still tests a merge",
-      "aquilaelabs/MediaReducer-Dev" in gate, gate)
-check("...and only for a push, so pull requests are untouched",
-      "'push'" in gate, gate)
-# The trap, and the reason this is asserted rather than trusted: a release
-# arrives through publish.yml's workflow_call, and inside a called workflow the
-# github context belongs to the CALLER — so a tag push reads as event_name
-# 'push' in here too. A condition written on the event alone would skip the
-# very suite the release gates on, and `needs:` treats a skipped job as
-# satisfied rather than failed, so the image would build having tested nothing.
-# Matching the branch ref is what keeps a tag out of it.
-check("...matched on the branch ref, so a release tag is never skipped",
-      "refs/heads/main" in gate, gate)
+# Never. A release arrives through publish.yml's workflow_call, and inside a
+# called workflow the github context belongs to the CALLER, so a tag push
+# reads as event_name 'push' in here too. Any condition on the job risks
+# skipping the very suite the release gates on, and `needs:` treats a skipped
+# job as satisfied rather than failed, so the image would build having tested
+# nothing.
+check("the test job has no condition that could skip it",
+      "if" not in tests["jobs"]["tests"], tests["jobs"]["tests"].get("if"))
 
 # ── The release gate ─────────────────────────────────────────────────────────
 # The image is what deletes people's files. It must not be buildable without
@@ -137,42 +99,6 @@ check("publishing still runs the suite first",
 check("...and the build waits for it",
       publish["jobs"]["publish"].get("needs") == "tests",
       publish["jobs"]["publish"].get("needs"))
-
-# ── The runner image ─────────────────────────────────────────────────────────
-# Held back from the public repo along with the rest of the dev tooling, so
-# only checked when it is here.
-compose = ROOT / "tools" / "ci-runner" / "docker-compose.yml"
-if compose.exists():
-    svc = yaml.safe_load(compose.read_text())["services"]["ci-runner"]
-    env = " ".join(svc.get("environment") or [])
-    # Org scope serves every aquilaelabs repo; the fork-PR safety line
-    # holds because GitHub withholds org runners from public repositories
-    # unless a runner group is explicitly opened to them.
-    check("the runner is org-scoped, to the org",
-          "RUNNER_SCOPE=org" in env and "ORG_NAME=aquilaelabs" in env, env)
-    check("...and labelled to match runs-on",
-          "self-hosted" in env, env)
-    check("the runner cannot reach the docker socket",
-          not any("docker.sock" in v for v in (svc.get("volumes") or [])), svc.get("volumes"))
-    # Whichever credential is in use, it is interpolated from .env. A literal
-    # one here is a token committed to the repo — and the registration token
-    # is short and unremarkable enough to paste in without it looking wrong.
-    creds = [v.split("=", 1)[1] for v in (svc.get("environment") or [])
-             if v.split("=", 1)[0] in ("RUNNER_TOKEN", "ACCESS_TOKEN")]
-    check("a credential is configured at all", len(creds) == 1, creds)
-    check("...and it is read from the environment, never written here",
-          all(c.startswith("${") for c in creds)
-          and not re.search(r"gh[pous]_[A-Za-z0-9]{16,}|=A[A-Z0-9]{20,}", env), creds)
-    dockerfile = (ROOT / "tools" / "ci-runner" / "Dockerfile").read_text()
-    check("the runner image is pinned",
-          re.search(r"^FROM \S+:\d+\.\d+\.\d+", dockerfile, re.M) is not None,
-          dockerfile.splitlines()[-1])
-    # The workflow and the baked chromium dependencies have to agree, or the
-    # image installs the libraries for a browser build the suite does not use.
-    pw = re.search(r"playwright@(\d+\.\d+\.\d+)", (WF / "tests.yml").read_text())
-    check("...and its Playwright matches the workflow's",
-          pw is not None and f"playwright@{pw.group(1)}" in dockerfile,
-          pw.group(1) if pw else None)
 
 print("RESULT:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
