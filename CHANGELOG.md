@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- MediaReducer has moved to github.com/aquilaelabs/MediaReducer, and its image to ghcr.io/aquilaelabs/mediareducer. The old ghcr.io/stencil-projects path no longer serves updates: change an Unraid container's Repository field to ghcr.io/aquilaelabs/mediareducer:latest to keep receiving them (1bd6db8)
+
+### Fixed
+
+- Switching tabs no longer flashes: the page you leave fades as you click and the next one fades in from the same point, instead of its content blinking out to almost nothing; a reload or Back no longer fades at all (f1c405c)
+- In the light theme, the theme button no longer reads Light for a moment before changing to Dark on every page you open (f1c405c)
+
 ## 0.8.0: 2026-09-28
 
 - Unraid installs follow the :latest image tag now. A container installed from an earlier template is still pointing at :alpha, which has stopped moving — change its Repository field to ghcr.io/stencil-projects/mediareducer:latest to keep receiving updates. (d1871a7)

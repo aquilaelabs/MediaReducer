@@ -41,6 +41,24 @@
         document.documentElement.setAttribute('data-bs-theme', saved);
       } catch (e) {}
     })();
+    /* Start the entrance where the page before left off. Clicking a tab fades
+       that page's content toward the dip, and the browser holds its last
+       frame until this page paints; prPageLeave (base.js) records how far
+       down it got, so this page's first frame matches it instead of dropping
+       to the bottom of the dip. Nothing recorded (a first visit, another
+       site, a stale entry): the full dip, which is what the CSS defaults to. */
+    (function () {
+      try {
+        var raw = sessionStorage.getItem('pr-page-dip');
+        if (!raw) return;
+        sessionStorage.removeItem('pr-page-dip');
+        var h = JSON.parse(raw);
+        var age = Date.now() - Number(h.t);
+        if (age >= 0 && age < 5000 && h.p >= 0 && h.p <= 1) {
+          document.documentElement.style.setProperty('--pr-enter-from', String(h.p));
+        }
+      } catch (e) {}
+    })();
     /* Every mutating request carries X-MediaReducer; the server rejects writes
        without it, blocking cross-origin drive-by POSTs (another origin can't add
        a custom header without a CORS preflight this server never approves).
@@ -102,7 +120,7 @@
         <circle cx="12" cy="12" r="4.2"/>
         <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
       </svg>
-      <span class="tt-label" id="theme-toggle-label">Light</span>
+      <span class="tt-label" id="theme-toggle-label"><span class="tt-to-light">Light</span><span class="tt-to-dark">Dark</span></span>
     </button>
   </div>
 </header>

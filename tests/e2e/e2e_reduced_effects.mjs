@@ -119,6 +119,34 @@ async function glass(path) {
   });
 }
 
+// A tab click fades the leaving page toward the dip (the first half of a
+// switch, e2e_nav_transition). The Dashboard's document is held back a
+// second so the page has time to fade, and the page records its own opacity
+// as it goes: nothing can be read off it from here while its navigation is
+// pending.
+async function tabClick() {
+  await p.goto(BASE + '/config', { waitUntil: 'load' });
+  await p.evaluate(() => document.querySelectorAll('.modal.show')
+    .forEach(m => window.bootstrap && bootstrap.Modal.getInstance(m)?.hide()));
+  await p.waitForTimeout(900);
+  await p.evaluate(() => addEventListener('pagehide', () => sessionStorage.setItem('test-left-at',
+    getComputedStyle(document.getElementById('main')).opacity)));
+  const isDash = u => new URL(u).pathname === '/';
+  await p.route(isDash, async (r) => {
+    if (r.request().resourceType() === 'document') await new Promise(res => setTimeout(res, 1500));
+    await r.continue();
+  });
+  await Promise.all([p.waitForURL(isDash, { waitUntil: 'load' }),
+                     p.getByRole('link', { name: 'Dashboard', exact: true }).first().click()]);
+  await p.unroute(isDash);
+  const leftAt = await p.evaluate(() => {
+    const v = sessionStorage.getItem('test-left-at');
+    sessionStorage.removeItem('test-left-at');
+    return v === null ? null : Number(v);
+  });
+  return { leftAt };
+}
+
 // Light/dark. The palette lands in one frame either way — that is what stops
 // the page wearing half of each theme — but the CROSS-FADE over it is a
 // snapshot of the whole page animating over another, the largest animation the
@@ -181,6 +209,9 @@ try {
   const barOn = await bar();
   check('...and a running progress bar carries stripes and a sweep',
         barOn && barOn.stripes && barOn.sweep && barOn.striping, barOn);
+  const clickOn = await tabClick();
+  check('...and a tab click fades the page on its way out',
+        clickOn.leftAt !== null && clickOn.leftAt < 0.5, clickOn);
   // The baseline the glass check below is worth anything against: a page with
   // no blur to begin with would pass "no blur when reduced" on its own.
   const glassOn = await glass('/config');
@@ -209,6 +240,9 @@ try {
   const barOff = await bar();
   check('a running progress bar drops its stripes and sweep, not its fill',
         barOff && !barOff.stripes && !barOff.sweep, barOff);
+  const clickOff = await tabClick();
+  check('a tab click leaves the page at full strength',
+        clickOff.leftAt === 1, clickOff);
 
   // Hover still says "clickable"; it just lands at once, and the press lands
   // on the same color rather than a third, darker one.

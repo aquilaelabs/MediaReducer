@@ -15,12 +15,16 @@
       --pr-anim-out: .18s ease;
       --pr-pulse-period: 1.5s;
       --pr-spin-period: .8s;
-      /* The page entrance, in three numbers — the whole of what a navigation
-         looks like. Tune them here; see the keyframe below for what each does
-         and what a slow deep fade costs. */
+      /* A navigation, in four numbers: the leaving page's content fades to the
+         dip, the arriving page's rises out of it. Tune them here; see the
+         keyframe below for what each does and what a slow deep fade costs. */
       --pr-enter-rise: 8px;    /* how far the content slides up into place */
-      --pr-enter-fade: .15;    /* the opacity it starts from; 1 = no fade */
-      --pr-enter-time: .7s;    /* how long the whole thing takes */
+      --pr-enter-fade: .15;    /* the dip: the opacity between pages; 1 = no fade */
+      --pr-enter-time: .7s;    /* how long the arriving page takes */
+      --pr-leave-time: .1s;    /* how long the leaving page takes to reach the dip; the click waits for it */
+      /* Not a knob: how far into the dip this page starts, 1 = all the way.
+         The head script in base.html sets it from what the page before left. */
+      --pr-enter-from: 1;
       /* Muted glass palette, paired to the light reference theme. */
       --surface-0:     #12161d;  /* deepest inset surfaces */
       --surface-1:     rgba(30,35,43,.88);  /* glass cards */
@@ -398,45 +402,61 @@
       box-shadow: var(--btn-shadow-hover);
     }
 
-    /* Page entrance, and the whole of what a navigation looks like: everything
-       below the header — title bar, actions and every card — rises into place
-       once per load, so switching between pages eases in instead of popping.
-       The header itself is identical on every page and is simply painted, not
-       animated, so it reads as one continuous surface across navigations — see
-       the note below on why it is NOT a view-transition group. Only a `from`
-       keyframe + backwards fill: the animation eases INTO the element's
-       natural style and leaves no animated transform behind once it ends (a
-       lingering identity transform would make #main the containing block for
-       any fixed-position descendant).
+    /* Page entrance, and the arriving half of a navigation: everything below
+       the header — title bar, actions and every card — rises into place once
+       per load. The header itself is identical on every page and is simply
+       painted, not animated, so it reads as one continuous surface across
+       navigations — see the note below on why it is NOT a view-transition
+       group. Only a `from` keyframe + backwards fill: the animation eases INTO
+       the element's natural style and leaves no animated transform behind once
+       it ends (a lingering identity transform would make #main the containing
+       block for any fixed-position descendant).
        (Reduced-motion users get none of this via the kill switch above.)
 
-       All three numbers are tokens (--pr-enter-* at the top of this file), so
-       the whole entrance is tuned in one place and nothing here needs editing
-       to change how it feels.
+       The leaving half is prPageLeave in base.js: clicking a tab fades the old
+       content to the dip once the button is released, then navigates, and the browser holds that page's last frame on
+       screen until this one paints. It used to hold it at full strength, and
+       this page then arrived at the bottom of the dip: every line of the old
+       page went at once, a one-frame drop that read as a flash. Now the old
+       page records how far into the dip it got, and this page starts from
+       exactly there (--pr-enter-from), so the two frames either side of the
+       switch are the same brightness. A reload, Back, or a page reached any
+       way but a press starts from where the page before stood, usually fully
+       in, so it does not dip at all. A first visit has nothing to continue
+       from and rises out of the full dip.
+
+       The numbers are tokens (--pr-enter-* and --pr-leave-time at the top of
+       this file), so the whole navigation is tuned in one place and nothing
+       here needs editing to change how it feels.
 
        What each costs, so a value can be picked rather than guessed:
 
          --pr-enter-rise  free. Transform animation is compositor work.
          --pr-enter-time  the window the other two are spent over.
          --pr-enter-fade  the one that is not free. The page behind #main is
-           dark, so while the content is under full opacity the arriving page
-           paints DARKER than it settles — measured 28.9 of 255 against 38.5
-           at a full fade — and a browser may put one blank frame between two
-           documents (Chromium holds the old pixels and shows none; other
-           Chromium builds paint their own canvas color). Landing dim right
-           after a pale frame is what reads as a flash. Time to reach 92% of
-           settled brightness through a real navigation: a plain ease-out over
-           .28s never did inside 150ms; this curve took 43ms at .24s and 85ms
-           at .38s. Starting nearer 1, or over a shorter time, spends less of
-           that. `1` opts out of the fade entirely and costs nothing.
+           dark, so while the content is under full opacity the page paints
+           DARKER than it settles — measured 28.9 of 255 against 38.5 at a
+           full fade — and the dip is how long the screen spends there.
+           Starting nearer 1, or over a shorter time, spends less of that. `1`
+           opts out of the fade entirely and costs nothing.
+         --pr-leave-time  is added to every switch: the click waits for the
+           fade before it navigates. It has to, because the browser stops
+           drawing the old page about 35ms after a navigation starts, and a
+           fade begun with the navigation hardly ever drew a frame (one
+           switch in five on the dev instance). It starts on the release, not
+           the press: holding a tab down dimming the page read as the page
+           going away before anything was chosen.
 
-       Note the curve is deliberately front-loaded rather than a keyword ease:
-       it is what keeps most of the fade out of the way early, and it is why a
-       longer --pr-enter-time is affordable at all. */
+       Note the entrance curve is deliberately front-loaded rather than a
+       keyword ease: it is what keeps most of the fade out of the way early,
+       and it is why a longer --pr-enter-time is affordable at all. Time to
+       reach 92% of settled brightness through a real navigation: a plain
+       ease-out over .28s never did inside 150ms; this curve took 43ms at .24s
+       and 85ms at .38s. */
     @keyframes pr-page-enter {
       from {
-        opacity: var(--pr-enter-fade);
-        transform: translateY(var(--pr-enter-rise));
+        opacity: calc(1 - var(--pr-enter-from) * (1 - var(--pr-enter-fade)));
+        transform: translateY(calc(var(--pr-enter-rise) * var(--pr-enter-from)));
       }
     }
     #main {
@@ -1678,6 +1698,12 @@
     :root[data-theme="light"] .theme-toggle .icon-to-light { display: none; }
     :root:not([data-theme="light"]) .theme-toggle .icon-to-dark  { display: none; }
     :root:not([data-theme="light"]) .theme-toggle .icon-to-light { display: block; }
+    /* The label too, and chosen the same way: by data-theme, which the head
+       script sets before the first paint. Written in by base.js instead, it
+       arrived saying Light and changed to Dark on every page a light-theme
+       reader opened, a flicker in the header on each switch of tab. */
+    :root[data-theme="light"] .theme-toggle .tt-to-light,
+    :root:not([data-theme="light"]) .theme-toggle .tt-to-dark { display: none; }
 
     @media (min-width: 768px) {
       .theme-toggle { margin-right: 24px; }   /* line up with the page content's right edge */

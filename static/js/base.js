@@ -159,17 +159,16 @@ function prSetTheme(theme, opts) {
     settle();
   }
   try { localStorage.setItem('pr-theme', t); } catch (e) {}
-  const label = document.getElementById('theme-toggle-label');
   const btn = document.getElementById('theme-toggle');
-  // Button advertises the theme you'll switch TO.
-  if (label) label.textContent = (t === 'light') ? 'Dark' : 'Light';
+  // Button advertises the theme you'll switch TO. Its label and icon follow
+  // data-theme in CSS, so they are right from the first paint.
   if (btn) btn.title = (t === 'light') ? 'Switch to dark theme' : 'Switch to light theme';
 }
 function prToggleTheme() {
   const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
   prSetTheme(current === 'light' ? 'dark' : 'light', { animate: true });
 }
-// Sync the label/title with whatever the pre-paint script already applied.
+// Sync the title with whatever the pre-paint script already applied.
 document.addEventListener('DOMContentLoaded', function () {
   prSetTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 });
@@ -746,6 +745,123 @@ function prApplyAppearance({ effectsOff, glassOff }) {
 }
 const prEffectsOff = () => document.documentElement.getAttribute('data-effects') === 'off';
 
+// Leaving a page: the first half of a navigation, whose second half is #main's
+// entrance (base.css). A click on a link to another page fades the content
+// to the dip, from the release, never while the button is held, and only
+// then goes: the browser stops drawing a page about 35ms after a navigation
+// starts, so a fade begun with it would hardly ever be seen. The browser
+// keeps this page's last frame on screen until the next page paints, and
+// pagehide records how far down that frame is, for the
+// next page's head script to start its entrance from, so the frames either
+// side of the switch match. Opacity only: a transform, even for the fade's few
+// frames, would make #main the containing block of the fixed log window and
+// move it.
+const PR_DIP_KEY = 'pr-page-dip';
+let _prLeave = null;          // the fade, while this page is on its way out
+let _prLeaveSafety = 0;
+let _prGoing = false;         // a click is waiting out the fade to navigate
+function _prDipTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const fade = parseFloat(cs.getPropertyValue('--pr-enter-fade'));
+  const time = cs.getPropertyValue('--pr-leave-time').trim();
+  const ms = /ms$/.test(time) ? parseFloat(time) : parseFloat(time) * 1000;
+  return { fade: Number.isFinite(fade) ? Math.min(1, Math.max(0, fade)) : 1,
+           ms: Number.isFinite(ms) && ms >= 0 ? ms : 120 };
+}
+// How far into the dip an opacity is: 0 at full strength, 1 at the bottom.
+function _prDipOf(opacity, fade) {
+  return fade < 1 ? Math.min(1, Math.max(0, (1 - opacity) / (1 - fade))) : 0;
+}
+// Returns the fade, or null where there is none to wait for.
+function prPageLeave() {
+  const main = document.getElementById('main');
+  if (_prLeave) return _prLeave;
+  if (!main || typeof main.animate !== 'function' || prEffectsOff()
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const { fade, ms } = _prDipTokens();
+  // From wherever the content stands, which is short of full strength when
+  // the press comes while this page is still rising in.
+  const from = Number(getComputedStyle(main).opacity);
+  _prLeave = main.animate([{ opacity: from }, { opacity: fade }], {
+    duration: ms * (1 - _prDipOf(from, fade)), easing: 'ease-out', fill: 'forwards',
+  });
+  // A navigation the reader cancels (Esc, the stop button) says nothing to
+  // the page; come back up rather than stay dimmed. A load this slow arrives
+  // from full strength, which is still no flash.
+  clearTimeout(_prLeaveSafety);
+  _prLeaveSafety = setTimeout(prPageStay, 4000);
+  return _prLeave;
+}
+// A click whose navigation was cancelled, or a page back from the
+// back/forward cache: the content comes back up.
+function prPageStay() {
+  clearTimeout(_prLeaveSafety);
+  _prGoing = false;
+  const a = _prLeave;
+  if (!a) return;
+  _prLeave = null;
+  a.reverse();
+  a.finished.then(() => a.cancel(), () => {});
+}
+// Links to another page of the app, however they are laid out: the tabs, the
+// header's Running badge, the Dashboard's links into Configuration. On the
+// click, which is the release: holding a tab down dimming the page read as
+// the page going away before anything had been chosen. The navigation waits
+// for the fade, about .1s (--pr-leave-time).
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0
+      || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+  if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+  if (a.origin !== location.origin
+      || (a.pathname === location.pathname && a.search === location.search)) return;
+  // A second click while the first is fading: the first one goes.
+  if (_prGoing) { e.preventDefault(); return; }
+  const fade = prPageLeave();
+  if (!fade) return;              // no fade (reduced motion, effects off): go now
+  e.preventDefault();
+  _prGoing = true;
+  const href = a.href;
+  // An animation starts on the next frame drawn; a busy page may be slow to
+  // draw one, and the click must not wait on it past the fade's own length.
+  const { ms } = _prDipTokens();
+  Promise.race([fade.finished.catch(() => {}), new Promise(r => setTimeout(r, ms + 150))])
+    .then(() => { if (_prGoing) location.assign(href); });
+});
+window.addEventListener('pagehide', () => {
+  const main = document.getElementById('main');
+  if (!main) return;
+  const { fade } = _prDipTokens();
+  let p = _prDipOf(Number(getComputedStyle(main).opacity), fade);
+  // With the fade turned off (1) opacity says nothing; the fade's own
+  // progress is how far it got.
+  if (fade >= 1 && _prLeave) p = _prLeave.effect.getComputedTiming().progress ?? 1;
+  try {
+    sessionStorage.setItem(PR_DIP_KEY, JSON.stringify({ p: Math.round(p * 1000) / 1000, t: Date.now() }));
+  } catch (err) {}
+});
+window.addEventListener('pageshow', (e) => {
+  if (!e.persisted) return;
+  // Back from the back/forward cache, frozen as it left: take up from where
+  // the page we came back from stood, as a fresh load does in the head script.
+  let p = 0;
+  try {
+    const h = JSON.parse(sessionStorage.getItem(PR_DIP_KEY) || 'null');
+    sessionStorage.removeItem(PR_DIP_KEY);
+    if (h && Date.now() - Number(h.t) < 5000 && h.p >= 0 && h.p <= 1) p = Number(h.p);
+  } catch (err) {}
+  clearTimeout(_prLeaveSafety);
+  _prGoing = false;
+  if (_prLeave) { _prLeave.cancel(); _prLeave = null; }
+  const main = document.getElementById('main');
+  if (main && p > 0.01) {
+    document.documentElement.style.setProperty('--pr-enter-from', String(p));
+    main.style.animation = 'none';
+    void main.offsetWidth;
+    main.style.animation = '';
+  }
+});
+
 // Tab click feedback: mark the clicked tab while its navigation is in flight
 // (see .is-navigating). Skipped for the current page and for modified clicks
 // (new-tab etc., which don't navigate this document).
@@ -796,6 +912,20 @@ function initTabNavFeedback() {
       setTimeout(() => a.classList.remove('is-navigating'), 20000);
     });
   });
+  // The browser keeps the leaving page's last frame up until the next one
+  // paints, wave and all, so how much of the wave that frame shows is where
+  // the next page takes it up: counting to the arrival instead let the frozen
+  // wave vanish whenever the next page took longer than the wave to paint.
+  window.addEventListener('pagehide', () => {
+    try {
+      const raw = sessionStorage.getItem('pr-tab-wave');
+      const w = raw && JSON.parse(raw);
+      if (w && w.shown == null) {
+        w.shown = Date.now() - Number(w.t);
+        sessionStorage.setItem('pr-tab-wave', JSON.stringify(w));
+      }
+    } catch (err) {}
+  });
   // Arriving side of the hand-off: if this page was reached by a tab click
   // moments ago, finish the wave on the (now active) tab from where the
   // previous page left it.
@@ -803,14 +933,16 @@ function initTabNavFeedback() {
     const raw = sessionStorage.getItem('pr-tab-wave');
     if (raw) {
       sessionStorage.removeItem('pr-tab-wave');
-      const { href, t } = JSON.parse(raw);
+      const { href, t, shown } = JSON.parse(raw);
       const elapsed = Date.now() - Number(t);
-      if (href === location.pathname && elapsed >= 0 && elapsed < 320
+      const played = Number.isFinite(shown) ? shown : elapsed;
+      if (href === location.pathname && elapsed >= 0 && elapsed < 5000
+          && played >= 0 && played < 320
           && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         const tab = [...document.querySelectorAll('.header-tabs a')]
           .find(x => (x.getAttribute('href') || '').split('#')[0] === href);
         if (tab) {
-          tab.style.setProperty('--pr-wave-offset', `-${Math.round(elapsed)}ms`);
+          tab.style.setProperty('--pr-wave-offset', `-${Math.round(played)}ms`);
           tab.classList.add('is-arriving');
           const settle = () => {
             tab.classList.remove('is-arriving');
